@@ -2,28 +2,47 @@ name: Build and Push to GHCR
 
 on:
   push:
-    branches: [ master ]  # master分支有提交时触发
+    branches: [ main ]  # 当推送到 main 分支时触发（可根据你的默认分支调整）
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write  # 允许推送到 GHCR
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
+      # 获取最新 Camoufox 下载链接（与原文件一致）
+      - name: Get Camoufox Download URL
+        id: get_camoufox_url
+        run: |
+          URL=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | grep "browser_download_url.*camoufox-linux.tar.gz" | cut -d : -f 2,3 | tr -d '", ')
+          echo "CAMOUFOX_URL=$URL" >> $GITHUB_ENV
+
+      # 登录到 GitHub Container Registry
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v4
+      # 设置支持缓存的 Buildx（优化构建速度）
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 构建并推送镜像到 GHCR
+      - name: Build and push
+        uses: docker/build-push-action@v5
         with:
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
+          build-args: |
+            CAMOUFOX_URL=${{ env.CAMOUFOX_URL }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
